@@ -1,0 +1,87 @@
+Parameters:
+  S3BucketName:
+    Type: String
+    Description: Name of the bucket where the code is located
+  S3ObjectKey:
+    Type: String
+    Description: File path in the bucket 
+  LambdaRoleArn:
+    Type: String
+    Description: Lambda execution role arn
+  SecurityGroupIds:
+    Type: CommaDelimitedList
+    Description: Add security group ids
+  SubnetIds:
+    Type: CommaDelimitedList
+    Description: Add Subnet Ids
+  AspNetCoreEnviroment:
+    Type: String
+  CertificateArn:
+    Type: String
+    Description: Certificate ARN for Cloudfront Distribution
+  DomainName:
+    Type: String
+    Description: Domain name for url api
+
+Resources:
+  LambdaApi:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: Lambda.Api
+      Role: !Ref LambdaRoleArn
+      FunctionName: lambda-api
+      Runtime: dotnet6
+      Timeout: 300
+      MemorySize: 256
+      Code:
+        S3Bucket: !Ref S3BucketName
+        S3Key: !Ref S3ObjectKey
+      Environment:
+          Variables:
+            ASPNETCORE_ENVIRONMENT: !Ref AspNetCoreEnviroment
+      VpcConfig:
+          SecurityGroupIds: !Ref SecurityGroupIds
+          SubnetIds: !Ref SubnetIds
+  LambdaApiPermissions:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LambdaApi
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+      FunctionUrlAuthType: NONE
+  LambdaApiUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !Ref LambdaApi
+      AuthType: NONE
+  LambdaApiCloudFront:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: Distrubution for Lambda API
+        PriceClass: PriceClass_All
+        Aliases:
+          - !Ref DomainName
+        CNAMEs:
+          - !Ref DomainName
+        Enabled: true
+        HttpVersion: http2
+        IPV6Enabled: false
+        Origins:
+          - DomainName: !Select [2, !Split ["/", !GetAtt LambdaApiUrl.FunctionUrl]]
+            Id: LambdaOrigin
+            CustomOriginConfig:
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+        DefaultCacheBehavior:
+          TargetOriginId: LambdaOrigin
+          CachePolicyId: '658327ea-f89d-4fab-a63d-7e88639e58f6'
+          ViewerProtocolPolicy: redirect-to-https
+          SmoothStreaming: 'false'
+          Compress: 'true'
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateArn
+          MinimumProtocolVersion: TLSv1.2_2021
+          SslSupportMethod: sni-only
+
+  
